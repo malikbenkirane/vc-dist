@@ -1,0 +1,107 @@
+package cmd
+
+import (
+	"bytes"
+	"fmt"
+	"os/exec"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+)
+
+type Commit interface {
+	Title() string
+	Body() string
+	Diff() string
+
+	yaml() commitYAML
+}
+
+type commitYAML struct {
+	Title string `yaml:"title"`
+	Body  string `yaml:"body"`
+	Diff  string `yaml:"diff"`
+}
+
+func (c commit) yaml() commitYAML {
+	if c.title == "" {
+		c.title = "usually less than 72 characters"
+	}
+	if c.body == "" {
+		c.body = "usually informal description of the commit"
+	}
+	return commitYAML{
+		Title: c.title,
+		Body:  c.body,
+		Diff:  c.diff,
+	}
+}
+
+type commit struct {
+	title string
+	body  string
+	diff  string
+}
+
+func newCommit() (Commit, error) {
+	return &commit{}, nil
+}
+
+func (c *commit) fileCommit(title, body string) (Commit, error) {
+	c.title = title
+	c.body = body
+	return c, nil
+}
+
+func (c *commit) diffUpdate() (Commit, error) {
+	cmd := exec.Command("git", "diff", "--unified", "--compact-summary")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	c.diff = out.String()
+	return c, nil
+}
+
+func (c commit) Title() string    { return c.title }
+func (c commit) Body() string     { return c.body }
+func (c commit) Diff() commitDiff { return newDiff(c.diff) }
+
+type commitDiff string
+
+func newDiff(diff string) commitDiff {
+	return commitDiff(diff)
+}
+
+var engageCmd = &cobra.Command{
+	Use: "e",
+	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		c, err := newCommit()
+		if err != nil {
+			return err
+		}
+
+		c, err = c.(*commit).diffUpdate()
+		if err != nil {
+			return err
+		}
+
+		{
+			cy := c.yaml()
+			out, err := yaml.Marshal(cy)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(out))
+		}
+
+		return nil
+	},
+}
+
+// todo))
+// var commitCmd = &cobra.Command{
+// 	Use:  "c",
+// 	RunE: func(cmd *cobra.Command, args []string) (err error) {},
+// }
